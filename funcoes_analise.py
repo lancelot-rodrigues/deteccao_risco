@@ -1,5 +1,5 @@
-# --- CÓDIGO COMPLETO E ATUALIZADO ---
-# Análise e Detecção Inteligente de Pirataria
+# Módulo de Funções para Análise de Dados
+# Contém funções para limpeza, enriquecimento, criação de features e visualização.
 
 import pandas as pd
 import re
@@ -25,22 +25,21 @@ def load_and_clean_data(filepath, separator=','):
     print("Iniciando a leitura e limpeza dos dados...")
     
     try:
-        # CORREÇÃO: Utilizando o separador de vírgula ','
         df = pd.read_csv(filepath, sep=separator)
     except FileNotFoundError:
         print(f"Erro: Arquivo '{filepath}' não encontrado. Certifique-se de que ele está na mesma pasta que o script.")
         return None
 
-    # Renomeia as colunas do CSV para os nomes que o script espera.
+    # Renomeia colunas para um padrão esperado
     colunas_para_renomear = {
         'nome_produto': 'titulo',
         'preco_produto': 'preco',
         'reviews_nota_media': 'avaliacao_nota',
         'reviews_quantidade_total': 'avaliacao_numero'
-        # Adicione aqui outras colunas se necessário, ex: 'detalhes': 'descricao'
     }
     df.rename(columns=colunas_para_renomear, inplace=True)
 
+    # Parser de preços no formato brasileiro (ex: "R$ 1.234,56")
     def parse_brazilian_price(price_str):
         if pd.isna(price_str): return np.nan
         try:
@@ -52,15 +51,15 @@ def load_and_clean_data(filepath, separator=','):
     if 'preco' in df.columns:
         df['preco'] = df['preco'].apply(parse_brazilian_price)
     
+    # Conversão de colunas numéricas
     if 'avaliacao_nota' in df.columns:
         df['avaliacao_nota'] = pd.to_numeric(df['avaliacao_nota'].astype(str).str.replace(',', '.'), errors='coerce')
     
     if 'avaliacao_numero' in df.columns:
-        # CORREÇÃO: Tratamento do FutureWarning
         df['avaliacao_numero'] = df['avaliacao_numero'].fillna(0)
         df['avaliacao_numero'] = df['avaliacao_numero'].astype(int)
 
-    # Remove linhas onde o preço ou o título são nulos
+    # Remoção de linhas com dados essenciais nulos
     df.dropna(subset=['preco', 'titulo'], inplace=True)
     
     print("Limpeza concluída. Resumo dos dados:")
@@ -74,6 +73,7 @@ def enrich_data(df):
     """Cria novas colunas analíticas para aprofundar a análise."""
     print("\nIniciando o enriquecimento dos dados...")
 
+    # Categorização de produtos baseada no título
     def categorize_product(title):
         title_lower = title.lower()
         if 'notebook' in title_lower or 'laptop' in title_lower:
@@ -83,18 +83,20 @@ def enrich_data(df):
         return 'Suprimento de Impressão'
     df['categoria_produto'] = df['titulo'].apply(categorize_product)
 
-    # Lógica de compatibilidade aprimorada
+    # Extração de atributos do título
     df['compatibilidade'] = np.where(df['titulo'].str.contains('compativel|compatível|gen[eé]rico|similar|tipo|remanufaturado', case=False, na=False, regex=True), 'Compatível', 'Original')
     df['capacidade'] = np.where(df['titulo'].str.contains('XL', case=False, na=False), 'XL (Alto Rendimento)', 'Padrão')
     df['modelo_cartucho'] = df['titulo'].str.extract(r'\b(662|664|667|954|122)\b', expand=False).fillna('Outro')
     
-    # --- MELHORIA: Extrair rendimento do TÍTULO ---
+    # Extrair rendimento do título
     def extract_yield(text):
         if not isinstance(text, str): return np.nan
         match = re.search(r'(\d+)\s*(p[aá]ginas|pg|págs)\b', text, re.IGNORECASE)
         return int(match.group(1)) if match else np.nan
     
     df['rendimento_paginas'] = df['titulo'].apply(extract_yield)
+    
+    # Cálculo de custo por página
     df['custo_por_pagina'] = np.where(df['rendimento_paginas'] > 0, df['preco'] / df['rendimento_paginas'], np.nan)
     
     if df['custo_por_pagina'].notna().sum() > 0:
@@ -105,19 +107,17 @@ def enrich_data(df):
     print("Enriquecimento concluído.")
     return df
 
-# Etapa 3: Aplicação da Inteligência de Detecção
-# ADICIONE ESTA FUNÇÃO AO SEU funcoes_analise.py
-
+# Etapa 3: Criação de Features para ML
 def create_features(df, avg_price_original_map):
     """Cria colunas numéricas (features) para o modelo de ML."""
     print("\nIniciando a criação de features para o ML...")
 
-    # Preencher NaNs que podem quebrar o modelo
+    # Tratamento de valores nulos para features numéricas
     df['preco'] = df['preco'].fillna(df['preco'].median())
     df['avaliacao_numero'] = df['avaliacao_numero'].fillna(0)
-    df['custo_por_pagina'] = df['custo_por_pagina'].fillna(0) # Assumir 0 se não calculável
+    df['custo_por_pagina'] = df['custo_por_pagina'].fillna(0)
 
-    # Feature 1: O produto é "Compatível"? (Binário)
+    # Feature 1: Compatibilidade (Binário)
     df['feature_compativel'] = (df['compatibilidade'] == 'Compatível').astype(int)
 
     # Feature 2: Preço Anômalo (Binário)
@@ -137,21 +137,20 @@ def create_features(df, avg_price_original_map):
     review_threshold = 5
     df['feature_baixa_reputacao'] = (df['avaliacao_numero'] < review_threshold).astype(int)
 
-    # Feature 5: Compatível + Baixa Reputação (Interação)
+    # Feature 5: Interação (Compatível + Baixa Reputação)
     df['feature_compativel_baixa_rep'] = ((df['feature_compativel'] == 1) & (df['feature_baixa_reputacao'] == 1)).astype(int)
 
-    # Feature 6: Reputação do Vendedor (se existir)
+    # Feature 6: Reputação do Vendedor (Binário)
     if 'reputacao_cor' in df.columns:
         bad_reputations = ['vermelho', 'laranja']
         df['feature_vendedor_ruim'] = df['reputacao_cor'].str.lower().isin(bad_reputations).astype(int)
     else:
-        # Se a coluna não existir, preenche com 0 (neutro)
-        df['feature_vendedor_ruim'] = 0
+        df['feature_vendedor_ruim'] = 0 # Valor neutro se a coluna não existir
 
     print("Criação de features concluída.")
     return df
 
-# Etapa 4: Análise e Geração de Gráficos
+# Etapa 4: Geração de Gráficos
 def generate_visualizations(df):
     """Gera e salva os gráficos para a análise exploratória."""
     print("\nIniciando a geração das visualizações...")
@@ -162,6 +161,7 @@ def generate_visualizations(df):
         print("Nenhum 'Suprimento de Impressão' encontrado para gerar gráficos.")
         return
 
+    # Filtrar outliers de preço para melhor visualização
     price_limit = df_suprimentos['preco'].quantile(0.95)
     df_filtered_price = df_suprimentos[df_suprimentos['preco'] <= price_limit]
     
