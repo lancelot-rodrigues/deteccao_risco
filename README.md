@@ -61,3 +61,11 @@ python analise.py
 streamlit run 3_dashboard.py
 ```
 * Saída: Abrirá uma aba no seu navegador com o dashboard interativo.
+
+---
+
+## Resultado do modelo (Matriz de Confusão)
+
+
+<img width="640" height="480" alt="grafico_matriz_confusao" src="https://github.com/user-attachments/assets/b28a79a3-1ede-470e-a72e-34bf3d6a4ec8" />
+
