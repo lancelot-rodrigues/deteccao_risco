@@ -1,19 +1,18 @@
 # --- SCRIPT: 3_dashboard.py ---
-# (Rode com: streamlit run 3_dashboard.py)
+# Dashboard interativo para visualização dos resultados da análise de risco.
 
 import streamlit as st
 import pandas as pd
 import altair as alt # Para gráficos interativos
 
-# --- 1. Configuração da Página ---
-# set_page_config deve ser o primeiro comando streamlit
+# 1. Configuração da Página
 st.set_page_config(
     layout="wide", 
     page_title="Dashboard de Risco",
     page_icon="🚨"
 )
 
-# --- 2. Título e Introdução ---
+# 2. Título e Introdução
 st.title(" Dashboard de Detecção de Risco")
 st.write(
     "Este dashboard interativo apresenta os resultados da análise de IA (RPA + Regressão Logística) "
@@ -21,7 +20,7 @@ st.write(
 )
 st.divider()
 
-# --- 3. Carregamento dos Dados ---
+# 3. Carregamento dos Dados
 # @st.cache_data armazena os dados em cache para performance
 @st.cache_data
 def load_data(filepath):
@@ -38,7 +37,7 @@ df = load_data(DATA_FILE)
 
 if not df.empty:
 
-    # --- 4. Barra Lateral com Filtros ---
+    # 4. Barra Lateral com Filtros
     st.sidebar.header("Painel de Filtros")
 
     # Filtro por Classificação da IA
@@ -57,10 +56,10 @@ if not df.empty:
         value=(50, 100) # Default: mostrar produtos com 50% a 100% de risco
     )
     
-    # --- 5. Aplicar Filtros ---
+    # 5. Aplicação dos Filtros
     df_filtrado = df.copy()
     
-    # Aplicar filtro de classificação (se não for "Todos")
+    # Aplicar filtro de classificação
     if classificacao_filtro != 'Todos':
         df_filtrado = df_filtrado[df_filtrado['classificacao_ia'] == classificacao_filtro]
     
@@ -70,14 +69,14 @@ if not df.empty:
         (df_filtrado['indicador_de_risco_pct'] <= risco_slider[1])
     ]
 
-    # --- 6. Exibir Métricas Principais (KPIs) ---
+    # 6. Métricas Principais (KPIs)
     st.subheader("Métricas Gerais da Análise")
     
     total_produtos = len(df)
     total_suspeitos = len(df[df['classificacao_ia'] == 'Suspeito'])
     risco_medio_total = df['indicador_de_risco_pct'].mean()
     
-    # Métricas do DADO FILTRADO
+    # Métricas dos dados filtrados
     total_filtrado = len(df_filtrado)
     risco_medio_filtrado = df_filtrado['indicador_de_risco_pct'].mean() if total_filtrado > 0 else 0
 
@@ -94,10 +93,10 @@ if not df.empty:
     
     st.divider()
 
-# --- 7. Visualização de Dados (Gráficos) ---
+    # 7. Visualização de Dados
     st.subheader("Visualização das Distribuições de Risco")
 
-    # Definir a paleta de cores que usaremos
+    # Definição da paleta de cores
     color_scale = alt.Scale(domain=['Original/Legítimo', 'Suspeito'], range=['#4CAF50', '#FF5733'])
 
     col_graf1, col_graf2 = st.columns(2)
@@ -105,17 +104,13 @@ if not df.empty:
     with col_graf1:
         st.write("#### 1. Contagem de Produtos por Faixa de Risco")
         # Gráfico de Barras Empilhadas (Contagem)
-        # Mostra a *quantidade* de produtos em cada faixa de risco.
         
         binned_risk_axis = alt.X('indicador_de_risco_pct', bin=alt.Bin(maxbins=20), title='Faixa de Risco (%)')
         
         stacked_bar = alt.Chart(df_filtrado).mark_bar().encode(
             x=binned_risk_axis,
             
-            # --- MUDANÇA PRINCIPAL AQUI ---
-            # Removemos 'stack="normalize"' do eixo Y.
-            # Agora, o eixo Y mostrará a CONTAGEM real de produtos,
-            # e as barras terão alturas diferentes.
+            # Eixo Y representa a contagem real de produtos
             y=alt.Y('count()', title='Contagem de Produtos'), 
             
             color=alt.Color('classificacao_ia', title='Classificação', scale=color_scale),
@@ -134,23 +129,20 @@ if not df.empty:
     with col_graf2:
         st.write("#### 2. Densidade das Populações por Risco")
         # Gráfico de Densidade (KDE)
-        # Mostra as duas "populações" de produtos e onde elas se concentram
         
         density_plot = alt.Chart(df_filtrado).transform_density(
             'indicador_de_risco_pct',
             as_=['risco', 'densidade'],
             groupby=['classificacao_ia']
         ).mark_area(opacity=0.7).encode(
-            # --- CORREÇÃO AQUI ---
-            # Precisamos ser explícitos sobre o tipo de dado ('Q' para quantitativo)
-            # que a transformação 'transform_density' cria.
+            # :Q especifica tipo quantitativo para os campos transformados
             x=alt.X('risco:Q', title='Indicador de Risco (%)'),
-            y=alt.Y('densidade:Q', title='Densidade', axis=None), # :Q já estava aqui
+            y=alt.Y('densidade:Q', title='Densidade', axis=None),
             
             color=alt.Color('classificacao_ia', title='Classificação', scale=color_scale),
             
             tooltip=[
-                alt.Tooltip('risco:Q', title='Indicador de Risco (%)'), # --- E AQUI ---
+                alt.Tooltip('risco:Q', title='Indicador de Risco (%)'),
                 'classificacao_ia'
             ]
         ).properties(
@@ -159,12 +151,11 @@ if not df.empty:
         st.altair_chart(density_plot, use_container_width=True)
 
 
-    # Gráfico 3: Preço vs. Score de Risco (mantemos este, pois é útil)
+    # Gráfico 3: Preço vs. Risco
     st.write("---") # Separador
     st.write("#### 3. Preço dos Produtos vs. Indicador de Risco")
     
     scatter_preco_risco = alt.Chart(df_filtrado).mark_circle(size=80, opacity=0.8).encode(
-        # Vamos manter a escala de Preço linear, mas formatar o eixo
         x=alt.X('preco', title='Preço (R$)', axis=alt.Axis(format='~s')), 
         y=alt.Y('indicador_de_risco_pct', title='Indicador de Risco (%)'),
         color=alt.Color('classificacao_ia', title='Classificação', scale=color_scale),
@@ -177,10 +168,7 @@ if not df.empty:
 
     st.divider() # Final do separador
     
-    # --- 8. Tabela de Dados Detalhada ---
-    # (O resto do seu código da tabela continua aqui, sem alterações)
-
-    # --- 8. Tabela de Dados Detalhada ---
+    # 8. Tabela de Dados Detalhada
     st.subheader(f"Relatório Detalhado ({total_filtrado} produtos)")
     
     # Formatação visual do risco na tabela
@@ -196,4 +184,4 @@ if not df.empty:
     )
 
 else:
-    st.warning("O arquivo de dados não foi carregado. Execute o script '2_analise_sprint4.py' e recarregue esta página.")
+    st.warning("O arquivo de dados não foi carregado. Execute o script 'analise.py'")
